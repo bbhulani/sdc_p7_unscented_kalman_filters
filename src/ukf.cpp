@@ -42,6 +42,18 @@ UKF::UKF() {
   // Laser measurement noise standard deviation position2 in m
   std_laspy_ = 0.15;
 
+  //measurement covariance matrix - laser
+  double var_laspx = std_laspx_*std_laspx_;
+  double var_laspy = std_laspx_*std_laspx_;
+  R_ = MatrixXd(2, 2);
+  R_ << var_laspx, 0,
+        0, var_laspy;
+
+  //measurement matrix
+  H_ = MatrixXd(2, 5);
+  H_ << 1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0;
+
   // Radar measurement noise standard deviation radius in m
   std_radr_ = 0.3;
 
@@ -116,7 +128,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     UpdateRadar(meas_package);
   } else if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
     //std::cout << "Update Lidar " << std::endl;
-    UpdateLidar(meas_package);
+    UpdateLidar(meas_package.raw_measurements_);
   }
 }
 
@@ -243,100 +255,18 @@ void UKF::Prediction(double delta_t) {
 /**
  * Use lidar data to update the belief about the object's position
  * Updates the state and the state covariance matrix using a laser measurement.
- * @param {MeasurementPackage} meas_package
+ * @param {VectorXd &z} meas_package.raw_measurements_
  */
-void UKF::UpdateLidar(MeasurementPackage meas_package) {
-  //set measurement dimension, lidar can measure px, py
-  int n_z = 2;
+void UKF::UpdateLidar(const VectorXd &z) {
+  VectorXd y = z - (H_ * x_);
+  MatrixXd S = H_ * P_ * H_.transpose() + R_;
+  MatrixXd K = P_ * H_.transpose() * S.inverse();
 
-  //create matrix for sigma points in measurement space
-  MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
-
-  //mean predicted measurement
-  VectorXd z_pred = VectorXd(n_z);
-  z_pred.fill(0.0);
- 
-  VectorXd z_diff = VectorXd(n_z); 
- 
-  //measurement covariance matrix S
-  MatrixXd S = MatrixXd(n_z,n_z);
-  S.fill(0.0);
-
-  //transform sigma points into measurement space
-  for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-    // measurement model
-    Zsig(0,i) = Xsig_pred_(0,i); //px
-    Zsig(1,i) = Xsig_pred_(1,i); //py
-  }
-
-  //mean predicted measurement
-  for (int i=0; i < 2*n_aug_+1; i++) {
-      z_pred = z_pred + weights_(i) * Zsig.col(i);
-  }
-
-  //predicted measurement covariance matrix S
-  for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-    //residual
-    z_diff = Zsig.col(i) - z_pred;
-
-    //angle normalization
-    while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
-    while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
-
-    S = S + weights_(i) * z_diff * z_diff.transpose();
-  }
-
-  //add measurement noise covariance matrix
-  MatrixXd R = MatrixXd(n_z,n_z);
-  R <<    std_laspx_*std_laspx_, 0,
-          0, std_laspy_*std_laspy_;
-  S = S + R;
-
-  //create example vector for incoming radar measurement
-  VectorXd z = VectorXd(n_z);
-  z <<
-      meas_package.raw_measurements_[0],
-      meas_package.raw_measurements_[1];
-
-  //create matrix for cross correlation Tc
-  MatrixXd Tc = MatrixXd(n_x_, n_z);
-
-  //calculate cross correlation matrix
-  Tc.fill(0.0);
-  for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
-    //residual
-    z_diff = Zsig.col(i) - z_pred;
-    //angle normalization
-    while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
-    while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
-
-    // state difference
-    VectorXd x_diff = Xsig_pred_.col(i) - x_;
-    //angle normalization
-    while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
-    while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
-
-    Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
-  }
-
-  //Kalman gain K;
-  MatrixXd K = Tc * S.inverse();
-
-  //residual
-  z_diff = z - z_pred;
-
-  //angle normalization
-  while (z_diff(1)> M_PI) z_diff(1)-=2.*M_PI;
-  while (z_diff(1)<-M_PI) z_diff(1)+=2.*M_PI;
-
-  //update state mean and covariance matrix
-  x_ = x_ + K * z_diff;
-  P_ = P_ - K*S*K.transpose();
-  //std::cout << "x_: " << std::endl << x_ << std::endl;
-  //std::cout << "P_: " << std::endl << P_ << std::endl;
-
-  VectorXd nis = z_diff.transpose() * S.inverse() * z_diff;
-  //std::cout << "nis: " << nis << std::endl;
+  //new estimate
+  x_ = x_ + (K * y);
+  long x_size = x_.size();
+  MatrixXd I = MatrixXd::Identity(x_size, x_size);
+  P_ = (I - K * H_) * P_;
 }
 
 /**

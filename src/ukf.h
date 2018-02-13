@@ -46,6 +46,12 @@ public:
   ///* Laser measurement noise standard deviation position2 in m
   double std_laspy_;
 
+  ///* lidar measurement matrix
+  MatrixXd H_;
+
+  ///* lidar measurement covariance matrix
+  MatrixXd R_;
+
   ///* Radar measurement noise standard deviation radius in m
   double std_radr_;
 
@@ -94,9 +100,9 @@ public:
 
   /**
    * Updates the state and the state covariance matrix using a laser measurement
-   * @param meas_package The measurement at k+1
+   * @param meas_package.raw_measurements_ The measurement at k+1
    */
-  void UpdateLidar(MeasurementPackage meas_package);
+  void UpdateLidar(const VectorXd &z);
 
   /**
    * Updates the state and the state covariance matrix using a radar measurement
