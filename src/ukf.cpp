@@ -21,13 +21,7 @@ UKF::UKF() {
   x_ = VectorXd(5);
 
   // initial covariance matrix
-  P_ = MatrixXd(5, 5);
-  P_ << 
-    .30, 0, 0, 0, 0,
-    0, .30, 0, 0, 0,
-    0, 0, .30, 0, 0,
-    0, 0, 0, .30, 0,
-    0, 0, 0, 0, .30;
+  P_ = MatrixXd::Identity(5,5) * 0.3;
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
   std_a_ = 2; 
@@ -116,6 +110,15 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
     // done initializing, no need to predict or update
     is_initialized_ = true;
+
+    // set weights_
+    double weight_0 = lambda_/(lambda_+n_aug_);
+    weights_(0) = weight_0;
+    double weight = 0.5/(n_aug_+lambda_);
+    for (int i=1; i<2*n_aug_+1; i++) {  //2n+1 weights_
+      weights_(i) = weight;
+    }
+
     return;
   }
   //compute the time elapsed between the current and previous measurements
@@ -179,13 +182,13 @@ void UKF::Prediction(double delta_t) {
   for (int i = 0; i< 2*n_aug_+1; i++)
   {
     //extract values for better readability
-    double p_x = Xsig_aug(0,i);
-    double p_y = Xsig_aug(1,i);
-    double v = Xsig_aug(2,i);
-    double yaw = Xsig_aug(3,i);
-    double yawd = Xsig_aug(4,i);
-    double nu_a = Xsig_aug(5,i);
-    double nu_yawdd = Xsig_aug(6,i);
+    double const p_x = Xsig_aug(0,i);
+    double const p_y = Xsig_aug(1,i);
+    double const v = Xsig_aug(2,i);
+    double const yaw = Xsig_aug(3,i);
+    double const yawd = Xsig_aug(4,i);
+    double const nu_a = Xsig_aug(5,i);
+    double const nu_yawdd = Xsig_aug(6,i);
 
     //predicted state values
     double px_p, py_p;
@@ -222,14 +225,6 @@ void UKF::Prediction(double delta_t) {
 
   //std::cout << "Xsig_pred_ = " << std::endl << Xsig_pred_ << std::endl;
 
-  // set weights_
-  double weight_0 = lambda_/(lambda_+n_aug_);
-  weights_(0) = weight_0;
-  for (int i=1; i<2*n_aug_+1; i++) {  //2n+1 weights_
-    double weight = 0.5/(n_aug_+lambda_);
-    weights_(i) = weight;
-  }
-
   //predicted state mean
   x_.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //iterate over sigma points
@@ -239,7 +234,6 @@ void UKF::Prediction(double delta_t) {
   //predicted state covariance matrix
   P_.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //iterate over sigma points
-
     // state difference
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
     //angle normalization
@@ -293,18 +287,18 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   //transform sigma points into measurement space
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {  //2n+1 simga points
     // extract values for better readibility
-    double p_x = Xsig_pred_(0,i);
-    double p_y = Xsig_pred_(1,i);
-    double v  = Xsig_pred_(2,i);
-    double yaw = Xsig_pred_(3,i);
+    double const p_x = Xsig_pred_(0,i);
+    double const p_y = Xsig_pred_(1,i);
+    double const v  = Xsig_pred_(2,i);
+    double const yaw = Xsig_pred_(3,i);
 
-    double v1 = cos(yaw)*v;
-    double v2 = sin(yaw)*v;
+    double const v1 = cos(yaw)*v;
+    double const v2 = sin(yaw)*v;
 
     // measurement model
     Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);                        //r
     Zsig(1,i) = atan2(p_y,p_x);                                 //phi
-    Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
+    Zsig(2,i) = (p_x*v1 + p_y*v2 ) / sqrt(p_x*p_x + p_y*p_y);   //r_dot TODO: check for divide by zero
   }
 
   //mean predicted measurement
